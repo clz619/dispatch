@@ -154,16 +154,45 @@ public class ZkPathManager {
         return currClientDeatilOnlinePath;
     }
 
-    private static interface MachineAttributeNode {
-        public static final String ID = "id";
 
-        public static final String NAME = "name";
+    public String getClientRegisterPath(String machineName) {
+        return getClientRegisterPath() + "/" + machineName;
+    }
 
-        public static final String STATUS = "status";
+    public String getClientDetailPath(String machineName) {
+        return getClientDetailPath() + "/" + machineName;
+    }
 
-        public static final String IP = "ip";
+    public String getClientDeatilIdPath(String machineName) {
+        return getClientDetailPath() + "/" + machineName + "/" + MachineAttributeNode.ID;
+    }
 
-        public static final String ONLINE_TS = "online_ts";
+    public String getClientDeatilNamePath(String machineName) {
+        return getClientDetailPath() + "/" + machineName + "/" + MachineAttributeNode.NAME;
+    }
+
+    public String getClientDeatilStausPath(String machineName) {
+        return getClientDetailPath() + "/" + machineName + "/" + MachineAttributeNode.STATUS;
+    }
+
+    public String getClientDeatilIpPath(String machineName) {
+        return getClientDetailPath() + "/" + machineName + "/" + MachineAttributeNode.IP;
+    }
+
+    public String getClientDeatilOnlinePath(String machineName) {
+        return getClientDetailPath() + "/" + machineName + "/" + MachineAttributeNode.ONLINE_TS;
+    }
+
+    private interface MachineAttributeNode {
+        String ID = "id";
+
+        String NAME = "name";
+
+        String STATUS = "status";
+
+        String IP = "ip";
+
+        String ONLINE_TS = "online_ts";
 
     }
 

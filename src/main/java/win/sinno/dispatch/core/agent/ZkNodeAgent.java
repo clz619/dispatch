@@ -1,6 +1,7 @@
 package win.sinno.dispatch.core.agent;
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.*;
 import org.apache.zookeeper.CreateMode;
@@ -10,12 +11,15 @@ import win.sinno.common.util.NetworkUtil;
 import win.sinno.dispatch.constrant.LoggerConfigs;
 import win.sinno.dispatch.core.MainDaemon;
 import win.sinno.dispatch.core.ZkPathManager;
+import win.sinno.dispatch.model.Machine;
 
 import java.net.InetAddress;
 import java.util.Collection;
+import java.util.Date;
 
 /**
  * zk node 处理
+ * machine
  *
  * @author : admin@chenlizhong.cn
  * @version : 1.0
@@ -36,29 +40,23 @@ public class ZkNodeAgent implements IAgent {
     private CuratorFramework curatorFramework;
 
     /**
-     * zk path
+     * zk path.
      */
     private ZkPathManager zkPathManager;
 
-    /////node monitor
-
     /**
-     * leader node monitor
+     * 机器注册节点监听
      */
-//    private ZkNodeMonitor zkLeaderNodeMonitor;
-
-    /**
-     * client register node monitor
-     */
-//    private ZkNodeMonitor zkClientRegisterNodeMonitor;
-
-    //机器注册节点监听
     private PathChildrenCache clientRegisterNodeCache;
 
-    //leader节点监听
+    /**
+     * leader节点监听
+     */
     private NodeCache leaderNodeCache;
 
-    //机器代理
+    /**
+     * 机器代理
+     */
     private MachineAgent machineAgent;
 
     public ZkNodeAgent(MainDaemon mainDaemon, CuratorFramework curatorFramework, ZkPathManager zkPathManager, MachineAgent machineAgent) {
@@ -110,6 +108,8 @@ public class ZkNodeAgent implements IAgent {
                         String nodeVal = new String(bytes);
 
                         LOG.info("leader node val change :{}", nodeVal);
+                        //设置 leader机器名
+                        machineAgent.setLeaderName(nodeVal);
                     }
                 }
             }
@@ -131,22 +131,78 @@ public class ZkNodeAgent implements IAgent {
 
                 LOG.info("client register path children cache listener:-----type:{},data:{}", new Object[]{event.getType(), event.getData()});
 
-                ChildData data = event.getData();
-
+                final ChildData data = event.getData();
+                //注册路径为临时节点，需要进行当连接断开节点便会释放
                 switch (event.getType()) {
                     case CHILD_ADDED:
                         //TODO 注册了新的machine
+                        //所有machine的详细信息，都从zk进行获取
                         LOG.info("CHILD_ADDED : {} data: {}", new Object[]{data.getPath(), data.getData() == null ? null : new String(data.getData())});
+
+                        //新的机器路径
+                        new Thread() {
+                            @Override
+                            public void run() {
+
+                                try {
+                                    //休眠10s，等待机器属性注册完成
+                                    Thread.sleep(10000l);
+                                } catch (InterruptedException e) {
+                                    LOG.error(e.getMessage(), e);
+                                }
+
+                                String newMachinePath = data.getPath();
+                                String[] pathArray = newMachinePath.split("/");
+                                //机器名
+                                String machineName = pathArray[pathArray.length - 1];
+
+                                try {
+                                    Machine machine = getMachineDetailNode(machineName);
+
+                                    if (Machine.MachineStatus.ONLINE.getValue().equals(machine.getStatus())) {
+                                        machineAgent.online(machine);
+                                    }
+
+                                    if (Machine.MachineStatus.OFFLINE.getValue().equals(machine.getStatus())) {
+                                        machineAgent.offline(machine);
+                                    }
+
+
+                                } catch (Exception e) {
+                                    LOG.error(e.getMessage(), e);
+                                }
+
+                                //获取机器
+                            }
+                        }.start();
+
+                        break;
+                    case CHILD_REMOVED:
+                        //TODO 移除machine信息
+                        LOG.info("CHILD_REMOVED : {} data: {}", new Object[]{data.getPath(), data.getData() == null ? null : new String(data.getData())});
+
+
+                        String newMachinePath = data.getPath();
+                        String[] pathArray = newMachinePath.split("/");
+                        //机器名
+                        String machineName = pathArray[pathArray.length - 1];
+
+                        try {
+
+                            Machine machine = getMachineDetailNode(machineName);
+
+                            machineAgent.offline(machine);
+
+                        } catch (Exception e) {
+                            LOG.error(e.getMessage(), e);
+                        }
+
+
                         break;
                     case CHILD_UPDATED:
                         //TODO 更新machine信息
                         LOG.info("CHILD_UPDATED : {} data: {}", new Object[]{data.getPath(), data.getData() == null ? null : new String(data.getData())});
                         break;
-                    case CHILD_REMOVED:
-                        //TODO 移除machine信息
-                        LOG.info("CHILD_REMOVED : {} data: {}", new Object[]{data.getPath(), data.getData() == null ? null : new String(data.getData())});
-                        break;
-
                     default:
                         break;
                 }
@@ -156,11 +212,131 @@ public class ZkNodeAgent implements IAgent {
     }
 
     /**
+     * 获取注册的节点详情
+     *
+     * @param machineName
+     * @return
+     */
+    public Machine getMachineDetailNode(String machineName) throws Exception {
+
+        Machine machine = null;
+
+        if (StringUtils.isEmpty(machineName)) {
+            return machine;
+        }
+
+        Stat stat = curatorFramework.checkExists().forPath(zkPathManager.getClientDetailPath(machineName));
+
+        if (stat == null) {
+            //节点不存在，则直接返回
+            return machine;
+        }
+
+        //机器ip
+        String id = getMachineIdNode(machineName);
+        //ips 多个ip，中间以英文逗号隔开
+        String ips = getMachineIpsNode(machineName);
+        //上线时间
+        String onlineTsStr = getMachineOnlinetsNode(machineName);
+
+        //机器注册路径-包含机器名
+        String clientRegisterPath = zkPathManager.getClientRegisterPath(machineName);
+
+        //检测是否在线
+        Stat registerStat = curatorFramework.checkExists().forPath(clientRegisterPath);
+
+        Machine.MachineStatus machineStatus = registerStat == null ? Machine.MachineStatus.OFFLINE : Machine.MachineStatus.ONLINE;
+
+        Long online = Long.valueOf(onlineTsStr);
+        Date now = new Date(online);
+
+        //machine
+        machine = new Machine();
+        machine.setName(machineName);
+        machine.setId(Long.valueOf(id));
+        machine.setGmtCreate(now);
+        machine.setGmtModified(now);
+
+        machine.setOnlineTs(online);
+        //机器状态
+        machine.setStatus(machineStatus.getValue());
+
+
+        return machine;
+    }
+
+    /**
+     * 获取id node的值
+     *
+     * @param machineName
+     * @return
+     * @throws Exception
+     */
+    public String getMachineIdNode(String machineName) throws Exception {
+        //id path
+        String idPath = zkPathManager.getClientDeatilIdPath(machineName);
+
+        //获取 路径的值
+        return getValueFromPath(idPath);
+    }
+
+    /**
+     * 获取machine ips node的值
+     *
+     * @param machineName
+     * @return
+     * @throws Exception
+     */
+    public String getMachineIpsNode(String machineName) throws Exception {
+        String ipPath = zkPathManager.getClientDeatilIpPath(machineName);
+
+        return getValueFromPath(ipPath);
+    }
+
+    /**
+     * 获取machine online ts node的值
+     *
+     * @param machineName
+     * @return
+     * @throws Exception
+     */
+    public String getMachineOnlinetsNode(String machineName) throws Exception {
+        String onlineTsPath = zkPathManager.getClientDeatilOnlinePath(machineName);
+
+        return getValueFromPath(onlineTsPath);
+    }
+
+    /**
+     * 获取zk路径path的值
+     *
+     * @param path
+     * @return
+     * @throws Exception
+     */
+    public String getValueFromPath(String path) throws Exception {
+        Stat stat = curatorFramework.checkExists().forPath(path);
+
+        if (stat == null) {
+            return null;
+        }
+
+        byte[] bytes = curatorFramework.getData().forPath(path);
+        if (bytes == null) {
+            return null;
+        }
+
+        //ip byte.字符串
+        return new String(bytes);
+
+    }
+
+    /**
      * 注册设为leader
      */
     public void registerLeaderNode() throws Exception {
         Stat stat = curatorFramework.checkExists().forPath(zkPathManager.getLeaderPath());
 
+        //节点状态
         if (stat == null) {
             curatorFramework.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL)
                     .forPath(zkPathManager.getLeaderPath(), zkPathManager.getMachineName().getBytes());
@@ -170,6 +346,7 @@ public class ZkNodeAgent implements IAgent {
 
         LOG.info("zk node set leader path:{} , value:{}", new Object[]{zkPathManager.getLeaderPath(), zkPathManager.getMachineName()});
     }
+
 
     /**
      * 注册客户端，register节点注册，detail属性注册
@@ -188,6 +365,8 @@ public class ZkNodeAgent implements IAgent {
      * 注册机器在线时保持的临时节点
      */
     public void registerClientNode() throws Exception {
+
+        //机器注册路径
         Stat stat = curatorFramework.checkExists().forPath(zkPathManager.getCurrClientRegisterPath());
 
         if (stat == null) {
@@ -200,8 +379,11 @@ public class ZkNodeAgent implements IAgent {
 
     /**
      * id , name, status, online, ip
+     * <p>
      */
     public void registerClientDetail() throws Exception {
+
+        //机器详细信息路径
         Stat stat = curatorFramework.checkExists().forPath(zkPathManager.getCurrClientDetailPath());
 
         if (stat == null) {
@@ -210,6 +392,8 @@ public class ZkNodeAgent implements IAgent {
         }
 
         registerClientId();
+
+        registerClientName();
 
         registerClientOnlineTs(System.currentTimeMillis());
 
@@ -242,6 +426,24 @@ public class ZkNodeAgent implements IAgent {
     }
 
     /**
+     * 记录机器名，实则路径中已包含，进行数据冗余
+     *
+     * @throws Exception
+     */
+    private void registerClientName() throws Exception {
+        Stat stat = curatorFramework.checkExists().forPath(zkPathManager.getCurrClientDeatilNamePath());
+
+        if (stat == null) {
+            curatorFramework.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT)
+                    .forPath(zkPathManager.getCurrClientDeatilNamePath(), zkPathManager.getMachineName().getBytes());
+
+            LOG.info("register client name path:{} , value:{}",
+                    new Object[]{zkPathManager.getCurrClientDeatilNamePath(), zkPathManager.getMachineName()});
+        }
+    }
+
+
+    /**
      * 记录机器上线时间
      *
      * @param onlineTs
@@ -267,7 +469,6 @@ public class ZkNodeAgent implements IAgent {
      */
     private void registerClientIp() throws Exception {
 
-        Stat stat = curatorFramework.checkExists().forPath(zkPathManager.getCurrClientDeatilIpPath());
         Collection<InetAddress> ipv4AddressList = NetworkUtil.getIpv4AddressWithoutLoopback();
 
         StringBuilder ipSb = new StringBuilder();
@@ -281,6 +482,8 @@ public class ZkNodeAgent implements IAgent {
             }
         }
 
+        Stat stat = curatorFramework.checkExists().forPath(zkPathManager.getCurrClientDeatilIpPath());
+
         if (stat == null) {
             curatorFramework.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT)
                     .forPath(zkPathManager.getCurrClientDeatilIpPath(), ipSb.toString().getBytes());
@@ -291,5 +494,14 @@ public class ZkNodeAgent implements IAgent {
 
     }
 
+
+    /**
+     * 设置本机为leader
+     *
+     * @param isLeader
+     */
+    public void setLocalLeader(Boolean isLeader) {
+        machineAgent.setIsLeader(isLeader);
+    }
 
 }

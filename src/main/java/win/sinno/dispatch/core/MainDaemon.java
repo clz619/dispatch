@@ -11,9 +11,6 @@ import win.sinno.dispatch.core.agent.LeaderLatchAgent;
 import win.sinno.dispatch.core.agent.MachineAgent;
 import win.sinno.dispatch.core.agent.ZkNodeAgent;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
 /**
  * 核心守护进程,dispath 启动入口
  * <p>
@@ -45,10 +42,8 @@ public class MainDaemon implements IMainDaemon {
     //连接时间
     private int connTimeoutMs = DispatchConfig.ZK_CONN_TIMEOUT_MS;
 
-
-    private CuratorFramework curatorClient;
-
-    private ExecutorService executorService = Executors.newCachedThreadPool();
+    //
+    private CuratorFramework curatorFramework;
 
     private ZkPathManager zkPathManager;
 
@@ -80,12 +75,16 @@ public class MainDaemon implements IMainDaemon {
         return zkPathManager;
     }
 
-    public CuratorFramework getCuratorClient() {
-        return curatorClient;
+    public CuratorFramework getCuratorFramework() {
+        return curatorFramework;
     }
 
     public ZkNodeAgent getZkNodeAgent() {
         return zkNodeAgent;
+    }
+
+    public MachineAgent getMachineAgent() {
+        return machineAgent;
     }
 
     /**
@@ -105,6 +104,7 @@ public class MainDaemon implements IMainDaemon {
 
             initZkNodeAgent();
 
+            //
             startLeaderLatch();
 
             registerClient();
@@ -148,17 +148,17 @@ public class MainDaemon implements IMainDaemon {
 
     protected void startCuratorClient() {
 
-        this.curatorClient = CuratorFrameworkFactory.builder().namespace(this.namespace).connectString(this.zkHost)
+        this.curatorFramework = CuratorFrameworkFactory.builder().namespace(this.namespace).connectString(this.zkHost)
                 .sessionTimeoutMs(this.sessionTimeoutMs).connectionTimeoutMs(this.connTimeoutMs)
                 .retryPolicy(new ExponentialBackoffRetry(1000, 3)).build();
 
-        this.curatorClient.start();
+        this.curatorFramework.start();
 
         try {
 
             LOG.info("curator client connecting...");
             //阻塞 直到连接
-            this.curatorClient.blockUntilConnected();
+            this.curatorFramework.blockUntilConnected();
 
             LOG.info("curator client connected... enjoy it.");
 
@@ -179,7 +179,7 @@ public class MainDaemon implements IMainDaemon {
 
 
     protected void initZkNodeAgent() throws Exception {
-        this.zkNodeAgent = new ZkNodeAgent(this, curatorClient, zkPathManager, machineAgent);
+        this.zkNodeAgent = new ZkNodeAgent(this, curatorFramework, zkPathManager, machineAgent);
 
         //节点监听
         this.zkNodeAgent.handler();
@@ -192,8 +192,8 @@ public class MainDaemon implements IMainDaemon {
     protected void stopCuratorClient() {
         LOG.info("curator client close begin...");
 
-        if (this.curatorClient != null) {
-            CloseableUtils.closeQuietly(this.curatorClient);
+        if (this.curatorFramework != null) {
+            CloseableUtils.closeQuietly(this.curatorFramework);
         }
 
         LOG.info("curator client close end...");
@@ -206,7 +206,7 @@ public class MainDaemon implements IMainDaemon {
     protected void startLeaderLatch() throws Exception {
         LOG.info("leader latch start begin...");
 
-        this.leaderLatchAgent = new LeaderLatchAgent(this, curatorClient, zkPathManager.getLeaderLatchPath(), zkPathManager.getMachineName());
+        this.leaderLatchAgent = new LeaderLatchAgent(this, curatorFramework, zkPathManager.getLeaderLatchPath(), zkPathManager.getMachineName(), zkNodeAgent);
 
         this.leaderLatchAgent.handler();
 

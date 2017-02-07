@@ -15,6 +15,37 @@ import java.util.List;
 public class Machine {
 
     /**
+     * 机器状态
+     */
+    public enum MachineStatus {
+        /**
+         * 上线
+         */
+        ONLINE("online", "上线")
+        /**
+         * 下线
+         */
+        , OFFLINE("offline", "下线");
+
+        MachineStatus(String value, String descr) {
+            this.value = value;
+            this.descr = descr;
+        }
+
+        private String value;
+
+        private String descr;
+
+        public String getValue() {
+            return value;
+        }
+
+        public String getDescr() {
+            return descr;
+        }
+    }
+
+    /**
      * 机器注册id
      */
     private Long id;
@@ -107,8 +138,8 @@ public class Machine {
         return isLeader;
     }
 
-    public void setLeader(boolean leader) {
-        isLeader = leader;
+    public void setIsLeader(boolean isLeader) {
+        this.isLeader = isLeader;
     }
 
     public Date getGmtCreate() {

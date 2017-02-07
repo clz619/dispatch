@@ -34,12 +34,16 @@ public class LeaderLatchAgent implements IAgent {
 
     private boolean isLeader = Boolean.FALSE;
 
+    //agent
+    private ZkNodeAgent zkNodeAgent;
 
-    public LeaderLatchAgent(MainDaemon mainDaemon, CuratorFramework curatorFramework, String latchPath, String id) {
+
+    public LeaderLatchAgent(MainDaemon mainDaemon, CuratorFramework curatorFramework, String latchPath, String id, ZkNodeAgent zkNodeAgent) {
         this.mainDaemon = mainDaemon;
         this.curatorFramework = curatorFramework;
         this.latchPath = latchPath;
         this.id = id;
+        this.zkNodeAgent = zkNodeAgent;
     }
 
 
@@ -49,7 +53,7 @@ public class LeaderLatchAgent implements IAgent {
     @Override
     public void handler() throws Exception {
         //leader 选举 - 重新 worker->leader 逻辑处理
-        leaderLatch = new LeaderLatch(curatorFramework, latchPath, id);
+        leaderLatch = new LeaderLatch(curatorFramework, latchPath, id, LeaderLatch.CloseMode.NOTIFY_LEADER);
 
         leaderLatch.addListener(new DispatchLeaderLatchListener());
 
@@ -74,8 +78,9 @@ public class LeaderLatchAgent implements IAgent {
 
         isLeader = Boolean.TRUE;
 
+        this.zkNodeAgent.setLocalLeader(isLeader);
         try {
-            this.mainDaemon.getZkNodeAgent().registerLeaderNode();
+            this.zkNodeAgent.registerLeaderNode();
         } catch (Exception e) {
             LOG.error(e.getMessage(), e);
         }
@@ -85,11 +90,10 @@ public class LeaderLatchAgent implements IAgent {
         LOG.info("leader latch , localhost is worker.");
 
         isLeader = Boolean.FALSE;
+
+        this.zkNodeAgent.setLocalLeader(isLeader);
     }
 
-    public boolean isLeader() {
-        return isLeader;
-    }
 
     /**
      * dispatch leader 选举 监听器
