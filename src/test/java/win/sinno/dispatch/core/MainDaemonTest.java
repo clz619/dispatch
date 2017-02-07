@@ -18,6 +18,34 @@ public class MainDaemonTest {
         String namespace = "sinno";
         MainDaemon mainDaemon = new MainDaemon(zkHost, namespace);
 
-        mainDaemon.startClient();
+        mainDaemon.startCuratorClient();
+    }
+
+    @Test
+    public void testS1() {
+
+        String zkHost = "192.168.1.35:2181";
+        String namespace = "sinno";
+        MainDaemon mainDaemon = new MainDaemon(zkHost, namespace);
+
+        mainDaemon.start();
+
+    }
+
+    @Test
+    public void testS2() {
+
+        String zkHost = "192.168.1.35:2181";
+        String namespace = "sinno";
+        MainDaemon mainDaemon = new MainDaemon(zkHost, namespace);
+
+        mainDaemon.start();
+
+        try {
+            Thread.sleep(100000l);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
     }
 }

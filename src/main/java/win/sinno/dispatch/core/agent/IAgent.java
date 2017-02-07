@@ -12,5 +12,5 @@ public interface IAgent {
     /**
      * 处理
      */
-    void handler();
+    void handler() throws Exception;
 }

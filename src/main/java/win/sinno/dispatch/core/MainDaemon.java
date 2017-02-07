@@ -5,7 +5,11 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.CloseableUtils;
 import org.slf4j.Logger;
+import win.sinno.dispatch.constrant.DispatchConfig;
 import win.sinno.dispatch.constrant.LoggerConfigs;
+import win.sinno.dispatch.core.agent.LeaderLatchAgent;
+import win.sinno.dispatch.core.agent.MachineAgent;
+import win.sinno.dispatch.core.agent.ZkNodeAgent;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,11 +32,7 @@ public class MainDaemon implements IMainDaemon {
 
     private static final Logger LOG = LoggerConfigs.DISPATCH_LOG;
 
-    /**
-     * 机器名
-     */
     private String machineName;
-
     //
     private String zkHost;
 
@@ -40,26 +40,52 @@ public class MainDaemon implements IMainDaemon {
     private String namespace;
 
     //会话超时时间
-    private int sessionTimeoutMs;
+    private int sessionTimeoutMs = DispatchConfig.ZK_SESSION_TIMEOUT_MS;
 
     //连接时间
-    private int connTimeoutMs;
+    private int connTimeoutMs = DispatchConfig.ZK_CONN_TIMEOUT_MS;
 
 
     private CuratorFramework curatorClient;
 
     private ExecutorService executorService = Executors.newCachedThreadPool();
 
+    private ZkPathManager zkPathManager;
+
+    //////////////agent/////////////
+
+    /**
+     * zk 节点
+     */
+    private ZkNodeAgent zkNodeAgent;
+
+    /**
+     * leader 选举
+     */
+    private LeaderLatchAgent leaderLatchAgent;
+
+    private MachineAgent machineAgent;
+
+    ////////////machine info/////////////
+
+
     public MainDaemon(String zkHost, String namespace) {
         this.zkHost = zkHost;
         this.namespace = namespace;
+        this.machineName = DispatchConfig.getMachineName();
     }
 
-    public MainDaemon(String machineName, String zkHost, String namespace) {
-        //机器名
-        this.machineName = machineName;
-        this.zkHost = zkHost;
-        this.namespace = namespace;
+
+    public ZkPathManager getZkPathManager() {
+        return zkPathManager;
+    }
+
+    public CuratorFramework getCuratorClient() {
+        return curatorClient;
+    }
+
+    public ZkNodeAgent getZkNodeAgent() {
+        return zkNodeAgent;
     }
 
     /**
@@ -68,8 +94,24 @@ public class MainDaemon implements IMainDaemon {
     public void start() {
 
         LOG.info("main daemon start begin.");
+        try {
+            initZkManager();
 
-        startClient();
+            startCuratorClient();
+
+            //之后需要 curator支持
+
+            initMachineAgent();
+
+            initZkNodeAgent();
+
+            startLeaderLatch();
+
+            registerClient();
+        } catch (Exception e) {
+            //FIXME 注册机器失败
+            LOG.error(e.getMessage(), e);
+        }
 
         LOG.info("main daemon start end.");
 
@@ -82,7 +124,9 @@ public class MainDaemon implements IMainDaemon {
 
         LOG.info("main daemon stop begin.");
 
-        stopClient();
+        stopCuratorClient();
+
+        stopLeaderLatch();
 
         LOG.info("main daemon stop end.");
 
@@ -96,19 +140,25 @@ public class MainDaemon implements IMainDaemon {
         this.connTimeoutMs = connTimeoutMs;
     }
 
-    protected void startClient() {
+    //初始化zk 管理器
+    protected void initZkManager() {
+        //zk path manager
+        this.zkPathManager = new ZkPathManager(this.namespace, machineName);
+    }
 
-        curatorClient = CuratorFrameworkFactory.builder().namespace(namespace).connectString(zkHost)
-                .sessionTimeoutMs(sessionTimeoutMs).connectionTimeoutMs(connTimeoutMs)
+    protected void startCuratorClient() {
+
+        this.curatorClient = CuratorFrameworkFactory.builder().namespace(this.namespace).connectString(this.zkHost)
+                .sessionTimeoutMs(this.sessionTimeoutMs).connectionTimeoutMs(this.connTimeoutMs)
                 .retryPolicy(new ExponentialBackoffRetry(1000, 3)).build();
 
-        curatorClient.start();
+        this.curatorClient.start();
 
         try {
 
             LOG.info("curator client connecting...");
             //阻塞 直到连接
-            curatorClient.blockUntilConnected();
+            this.curatorClient.blockUntilConnected();
 
             LOG.info("curator client connected... enjoy it.");
 
@@ -119,17 +169,76 @@ public class MainDaemon implements IMainDaemon {
     }
 
     /**
+     * 初始化机器代理
+     */
+    protected void initMachineAgent() {
+        LOG.info("init machine agent begin...");
+        this.machineAgent = new MachineAgent();
+        LOG.info("init machine agent end..,");
+    }
+
+
+    protected void initZkNodeAgent() throws Exception {
+        this.zkNodeAgent = new ZkNodeAgent(this, curatorClient, zkPathManager, machineAgent);
+
+        //节点监听
+        this.zkNodeAgent.handler();
+    }
+
+
+    /**
      * 停止客户端
      */
-    protected void stopClient() {
-
+    protected void stopCuratorClient() {
         LOG.info("curator client close begin...");
 
-        if (curatorClient != null) {
-            CloseableUtils.closeQuietly(curatorClient);
+        if (this.curatorClient != null) {
+            CloseableUtils.closeQuietly(this.curatorClient);
         }
 
         LOG.info("curator client close end...");
     }
+
+    /**
+     * 开始选举
+     * 需要curator,zkPathManager
+     */
+    protected void startLeaderLatch() throws Exception {
+        LOG.info("leader latch start begin...");
+
+        this.leaderLatchAgent = new LeaderLatchAgent(this, curatorClient, zkPathManager.getLeaderLatchPath(), zkPathManager.getMachineName());
+
+        this.leaderLatchAgent.handler();
+
+        LOG.info("leader latch start begined...");
+    }
+
+    /**
+     * 退出leader选举
+     */
+    protected void stopLeaderLatch() {
+        LOG.info("leader latch stop begin...");
+
+        if (this.leaderLatchAgent != null) {
+            this.leaderLatchAgent.stop();
+        }
+
+        LOG.info("leader latch stop end...");
+    }
+
+
+    /**
+     * 注册机器
+     *
+     * @throws Exception
+     */
+    protected void registerClient() throws Exception {
+        LOG.info("register client begin...");
+
+        this.zkNodeAgent.registerClient();
+
+        LOG.info("register client end...");
+    }
+
 
 }

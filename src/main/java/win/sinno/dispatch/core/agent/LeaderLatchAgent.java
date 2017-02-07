@@ -1,5 +1,14 @@
 package win.sinno.dispatch.core.agent;
 
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.recipes.leader.LeaderLatch;
+import org.apache.curator.framework.recipes.leader.LeaderLatchListener;
+import org.slf4j.Logger;
+import win.sinno.dispatch.constrant.LoggerConfigs;
+import win.sinno.dispatch.core.MainDaemon;
+
+import java.io.IOException;
+
 /**
  * 领导选举 代理
  *
@@ -9,15 +18,92 @@ package win.sinno.dispatch.core.agent;
  */
 public class LeaderLatchAgent implements IAgent {
 
+    private static final Logger LOG = LoggerConfigs.DISPATCH_LOG;
+    /**
+     * 核心守护进程
+     */
+    private MainDaemon mainDaemon;
 
-    public LeaderLatchAgent(){
+    private LeaderLatch leaderLatch;
 
+    private CuratorFramework curatorFramework;
+
+    private String latchPath;
+
+    private String id;
+
+    private boolean isLeader = Boolean.FALSE;
+
+
+    public LeaderLatchAgent(MainDaemon mainDaemon, CuratorFramework curatorFramework, String latchPath, String id) {
+        this.mainDaemon = mainDaemon;
+        this.curatorFramework = curatorFramework;
+        this.latchPath = latchPath;
+        this.id = id;
     }
+
+
     /**
      * 处理
      */
     @Override
-    public void handler() {
+    public void handler() throws Exception {
         //leader 选举 - 重新 worker->leader 逻辑处理
+        leaderLatch = new LeaderLatch(curatorFramework, latchPath, id);
+
+        leaderLatch.addListener(new DispatchLeaderLatchListener());
+
+        leaderLatch.start();
+
+        LOG.info("leader latch start..");
+    }
+
+    public void stop() {
+        if (leaderLatch != null) {
+            try {
+                leaderLatch.close(LeaderLatch.CloseMode.NOTIFY_LEADER);
+                leaderLatch = null;
+            } catch (IOException e) {
+                LOG.error("leader latch close err.  " + e.getMessage(), e);
+            }
+        }
+    }
+
+    private void becomeLeader() {
+        LOG.info("leader latch , localhost is leader.");
+
+        isLeader = Boolean.TRUE;
+
+        try {
+            this.mainDaemon.getZkNodeAgent().registerLeaderNode();
+        } catch (Exception e) {
+            LOG.error(e.getMessage(), e);
+        }
+    }
+
+    private void becomeWorker() {
+        LOG.info("leader latch , localhost is worker.");
+
+        isLeader = Boolean.FALSE;
+    }
+
+    public boolean isLeader() {
+        return isLeader;
+    }
+
+    /**
+     * dispatch leader 选举 监听器
+     */
+    private class DispatchLeaderLatchListener implements LeaderLatchListener {
+
+        @Override
+        public void isLeader() {
+            becomeLeader();
+        }
+
+        @Override
+        public void notLeader() {
+            becomeWorker();
+        }
     }
 }
