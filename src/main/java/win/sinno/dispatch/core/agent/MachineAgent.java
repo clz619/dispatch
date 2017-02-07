@@ -215,6 +215,9 @@ public class MachineAgent implements IAgent {
         //塞进 下线机器map
         offMachineMap.put(machine.getName(), machine);
 
+        //从worker中移除 机器
+        workerSet.remove(machine);
+
         offlineTotal++;
     }
 
@@ -237,7 +240,10 @@ public class MachineAgent implements IAgent {
                 .append("\n online count       : ").append(onlineCount)
                 .append("\n online total       : ").append(onlineTotal)
                 .append("\n offline total      : ").append(offlineTotal)
-                .append("\n changeLeaderCount  : ").append(changeLeaderCount);
+                .append("\n changeLeaderCount  : ").append(changeLeaderCount)
+                .append("\n worker count       : ").append(workerSet.size())
+                .append("\n leader machine     : ").append(leaderMachineName)
+                ;
 
 
         return status.toString();
