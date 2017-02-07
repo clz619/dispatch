@@ -61,18 +61,7 @@ public class MachineAgent implements IAgent {
      */
     private boolean leaderRefreshFlag = false;
 
-    /**
-     * 处理
-     */
-    @Override
-    public void handler() throws Exception {
-        //ignore
-    }
-
-    //检测机器咋在线状态-
-    public void checkMachine() {
-        //TODO
-    }
+    ////TODO status 数据 共享 持久化至 zk? redis?
 
     /**
      * 上线机器中暑
@@ -93,6 +82,19 @@ public class MachineAgent implements IAgent {
      */
     private int changeLeaderCount = 0;
 
+
+    /**
+     * 处理
+     */
+    @Override
+    public void handler() throws Exception {
+        //ignore
+    }
+
+    //检测机器咋在线状态-
+    public void checkMachine() {
+        //TODO
+    }
 
     /**
      * 设置leader
@@ -228,7 +230,7 @@ public class MachineAgent implements IAgent {
     /**
      * 机器代理状态
      */
-    public void status() {
+    public String status() {
         //状态
         StringBuilder status = new StringBuilder();
         status.append("\n=====machine status========================")
@@ -238,6 +240,6 @@ public class MachineAgent implements IAgent {
                 .append("\n changeLeaderCount  : ").append(changeLeaderCount);
 
 
-        LOG.info(status.toString());
+        return status.toString();
     }
 }

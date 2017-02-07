@@ -68,6 +68,8 @@ public class MainDaemonTest {
             System.out.println(machine.toString());
         }
 
+        System.out.println(machineAgent.status());
+
     }
 
     @Test
@@ -102,6 +104,7 @@ public class MainDaemonTest {
             System.out.println(machine.toString());
         }
 
+        System.out.println(machineAgent.status());
     }
 
     @Test
@@ -136,5 +139,6 @@ public class MainDaemonTest {
             System.out.println(machine.toString());
         }
 
+        System.out.println(machineAgent.status());
     }
 }
