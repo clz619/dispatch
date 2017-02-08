@@ -90,6 +90,8 @@ public class MainDaemonTest {
 
         //machine agent
         MachineAgent machineAgent = mainDaemon.getMachineAgent();
+
+        //获取leader
         Machine leaderMachine = machineAgent.getLeaderMachine();
 
         Set<Machine> workerMachines = machineAgent.getWorkerMachines();
@@ -109,6 +111,41 @@ public class MainDaemonTest {
 
     @Test
     public void testS4() {
+
+        String zkHost = "192.168.1.35:2181";
+        String namespace = "sinno";
+        MainDaemon mainDaemon = new MainDaemon(zkHost, namespace);
+
+        mainDaemon.start();
+
+        try {
+
+            Thread.sleep(70000l);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        //machine agent
+        MachineAgent machineAgent = mainDaemon.getMachineAgent();
+        Machine leaderMachine = machineAgent.getLeaderMachine();
+
+        Set<Machine> workerMachines = machineAgent.getWorkerMachines();
+
+        System.out.println("leader machine:" + leaderMachine);
+
+        System.out.println("-----");
+
+        System.out.println("worker machine :");
+
+        for (Machine machine : workerMachines) {
+            System.out.println(machine.toString());
+        }
+
+        System.out.println(machineAgent.status());
+    }
+
+    @Test
+    public void testS5() {
 
         String zkHost = "192.168.1.35:2181";
         String namespace = "sinno";

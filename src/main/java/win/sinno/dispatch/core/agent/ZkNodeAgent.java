@@ -250,7 +250,7 @@ public class ZkNodeAgent implements IAgent {
         Long online = Long.valueOf(onlineTsStr);
         Date now = new Date(online);
 
-        //machine
+        /////////////////////machine
         machine = new Machine();
         machine.setName(machineName);
         machine.setId(Long.valueOf(id));
@@ -260,7 +260,6 @@ public class ZkNodeAgent implements IAgent {
         machine.setOnlineTs(online);
         //机器状态
         machine.setStatus(machineStatus.getValue());
-
 
         return machine;
     }

@@ -31,7 +31,10 @@ public class MachineAgent implements IAgent {
 
     private Lock wlock = rrwlock.writeLock();
 
-    private Boolean isLeader;
+    //
+    private boolean isLeader;
+
+    private boolean setLeaderFlag;
 
     /**
      * leader 机器名
@@ -114,6 +117,8 @@ public class MachineAgent implements IAgent {
         }
 
         changeLeaderCount++;
+
+        setLeaderFlag = true;
     }
 
     /**
@@ -125,6 +130,7 @@ public class MachineAgent implements IAgent {
         Iterator<Machine> iterator = machineCollects.iterator();
 
         Machine machine = null;
+
         while (iterator.hasNext()) {
             machine = iterator.next();
 
@@ -148,17 +154,27 @@ public class MachineAgent implements IAgent {
     }
 
     /**
+     * 返回本地机器名
+     *
+     * @return
+     */
+    public String getLocalMachineName() {
+        return localMachineName;
+    }
+
+    /**
      * leader 机器名
      *
      * @return
      */
-    public synchronized String getLeaderMachineName() {
+    public String getLeaderMachineName() {
         return leaderMachineName;
     }
 
 
     /**
-     * FIXME leader 机器 有可能 machine未更新
+     * 获取leader机器信息
+     * FIXMe 有可能出现以下场景，已经选举出leader，machine未更新
      *
      * @return
      */
@@ -167,12 +183,49 @@ public class MachineAgent implements IAgent {
     }
 
     /**
-     * 获取客户端
+     * 获取线上的worker集合
      *
      * @return
      */
     public Set<Machine> getWorkerMachines() {
         return workerSet;
+    }
+
+    /**
+     * 获取线上的worker数量
+     *
+     * @return
+     */
+    public int getWorkerSize() {
+        return workerSet.size();
+    }
+
+    public void setIsLeader(Boolean isLeader) {
+        this.isLeader = isLeader;
+    }
+
+
+    public boolean isLeader() {
+        return isLeader;
+    }
+
+    /**
+     * 本机为工作机
+     *
+     * @return
+     */
+    public boolean isWorker() {
+        return setLeaderFlag && !isLeader;
+    }
+
+
+    /**
+     * 是否有设置过leader
+     *
+     * @return
+     */
+    public boolean isHasLeader() {
+        return setLeaderFlag;
     }
 
     /**
@@ -222,14 +275,6 @@ public class MachineAgent implements IAgent {
     }
 
 
-    public void setIsLeader(Boolean isLeader) {
-        this.isLeader = isLeader;
-    }
-
-    public Boolean isLeader() {
-        return isLeader;
-    }
-
     /**
      * 机器代理状态
      */
@@ -243,7 +288,7 @@ public class MachineAgent implements IAgent {
                 .append("\n changeLeaderCount  : ").append(changeLeaderCount)
                 .append("\n worker count       : ").append(workerSet.size())
                 .append("\n leader machine     : ").append(leaderMachineName)
-                ;
+        ;
 
 
         return status.toString();

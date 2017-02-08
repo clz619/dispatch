@@ -5,11 +5,13 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.CloseableUtils;
 import org.slf4j.Logger;
+import win.sinno.dispatch.concurrent.DispatchThreadFactory;
 import win.sinno.dispatch.constrant.DispatchConfig;
 import win.sinno.dispatch.constrant.LoggerConfigs;
-import win.sinno.dispatch.core.agent.LeaderLatchAgent;
-import win.sinno.dispatch.core.agent.MachineAgent;
-import win.sinno.dispatch.core.agent.ZkNodeAgent;
+import win.sinno.dispatch.core.agent.*;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 核心守护进程,dispath 启动入口
@@ -61,7 +63,11 @@ public class MainDaemon implements IMainDaemon {
 
     private MachineAgent machineAgent;
 
-    ////////////machine info/////////////
+    private LeaderAgent leaderAgent;
+
+    private WorkerAgent workerAgent;
+
+    private ExecutorService executorService = Executors.newCachedThreadPool(new DispatchThreadFactory("MainDaemon"));
 
 
     public MainDaemon(String zkHost, String namespace) {
@@ -89,28 +95,35 @@ public class MainDaemon implements IMainDaemon {
 
     /**
      * 启动入口
+     * 1.启动机器代理
+     * 2.初始化zk路径管理器
+     * 3.启动curator客户端
+     * 4.启动zk节点代理
+     * 5.启动leader选举代理
+     * 6.启各个动机器的服务代理
      */
     public void start() {
 
         LOG.info("main daemon start begin.");
         try {
-            initZkManager();
+
+            startMachineAgent();
+
+            initZkPathManager();
 
             startCuratorClient();
 
-            //之后需要 curator支持
+            startZkNodeAgent();
 
-            initMachineAgent();
+            startLeaderLatchAgent();
 
-            initZkNodeAgent();
-
-            //
-            startLeaderLatch();
-
-            registerClient();
+            startMachineServiceAgent();
         } catch (Exception e) {
-            //FIXME 注册机器失败
+            //FIXME
+            //TODO 中间有启动异常的，调用stop，并
             LOG.error(e.getMessage(), e);
+
+            stop();
         }
 
         LOG.info("main daemon start end.");
@@ -124,9 +137,9 @@ public class MainDaemon implements IMainDaemon {
 
         LOG.info("main daemon stop begin.");
 
-        stopCuratorClient();
-
         stopLeaderLatch();
+
+        stopCuratorClient();
 
         LOG.info("main daemon stop end.");
 
@@ -141,7 +154,7 @@ public class MainDaemon implements IMainDaemon {
     }
 
     //初始化zk 管理器
-    protected void initZkManager() {
+    protected void initZkPathManager() {
         //zk path manager
         this.zkPathManager = new ZkPathManager(this.namespace, machineName);
     }
@@ -171,18 +184,25 @@ public class MainDaemon implements IMainDaemon {
     /**
      * 初始化机器代理
      */
-    protected void initMachineAgent() {
+    protected void startMachineAgent() {
         LOG.info("init machine agent begin...");
         this.machineAgent = new MachineAgent();
         LOG.info("init machine agent end..,");
     }
 
 
-    protected void initZkNodeAgent() throws Exception {
+    protected void startZkNodeAgent() throws Exception {
         this.zkNodeAgent = new ZkNodeAgent(this, curatorFramework, zkPathManager, machineAgent);
 
         //节点监听
         this.zkNodeAgent.handler();
+
+        ////注册机器
+        LOG.info("register client begin...");
+
+        this.zkNodeAgent.registerClient();
+
+        LOG.info("register client end...");
     }
 
 
@@ -203,7 +223,7 @@ public class MainDaemon implements IMainDaemon {
      * 开始选举
      * 需要curator,zkPathManager
      */
-    protected void startLeaderLatch() throws Exception {
+    protected void startLeaderLatchAgent() throws Exception {
         LOG.info("leader latch start begin...");
 
         this.leaderLatchAgent = new LeaderLatchAgent(this, curatorFramework, zkPathManager.getLeaderLatchPath(), zkPathManager.getMachineName(), zkNodeAgent);
@@ -226,18 +246,22 @@ public class MainDaemon implements IMainDaemon {
         LOG.info("leader latch stop end...");
     }
 
-
     /**
-     * 注册机器
+     * 执行机器
      *
      * @throws Exception
      */
-    protected void registerClient() throws Exception {
-        LOG.info("register client begin...");
+    protected void startMachineServiceAgent() throws Exception {
+        //leader agent
+        leaderAgent = new LeaderAgent(machineAgent);
 
-        this.zkNodeAgent.registerClient();
+        //worker agent
+        workerAgent = new WorkerAgent(machineAgent);
 
-        LOG.info("register client end...");
+        //exec
+        executorService.execute(leaderAgent);
+
+        executorService.execute(workerAgent);
     }
 
 
